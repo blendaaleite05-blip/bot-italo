@@ -52,7 +52,7 @@ client.once('clientReady', async () => {
 
     client.user.setPresence({
         activities: [{
-            name: 'LIVE ON - ITALO SILVA',
+            name: '🔴 LIVE ON - ITALO SILVA',
             type: 1,
             url: YOUTUBE_URL
         }],
