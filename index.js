@@ -61,11 +61,120 @@ const YOUTUBE_CHANNEL_ID = 'UCS99u5HTSzbyhXczC19EOpg';
 const YOUTUBE_URL = 'https://youtube.com/@italosilva';
 
 // ==============================
-// CONTROLE DA LIVE
+// CONTROLE DO MONITORAMENTO
 // ==============================
 
-let liveConhecida = null;
-let liveAnunciadaAoVivo = false;
+let monitoramentoAtivo = false;
+let liveEncontradaHoje = false;
+let ultimoDiaMonitorado = null;
+
+// ==============================
+// HORÁRIO DO MONITORAMENTO
+// ==============================
+
+const HORA_INICIO = 15;
+const MINUTO_INICIO = 55;
+
+const HORA_FIM = 23;
+const MINUTO_FIM = 0;
+
+// ==============================
+// PEGAR DATA/HORA DO BRASIL
+// ==============================
+
+function obterHorarioBrasil() {
+
+    const agora = new Date();
+
+    const partes = new Intl.DateTimeFormat(
+        'en-US',
+        {
+            timeZone: 'America/Sao_Paulo',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+        }
+    ).formatToParts(agora);
+
+    const pegar = (tipo) => {
+
+        return Number(
+            partes.find(
+                parte => parte.type === tipo
+            ).value
+        );
+    };
+
+    return {
+        ano: pegar('year'),
+        mes: pegar('month'),
+        dia: pegar('day'),
+        hora: pegar('hour'),
+        minuto: pegar('minute')
+    };
+}
+
+// ==============================
+// VERIFICAR SE ESTÁ NO HORÁRIO
+// ==============================
+
+function estaNoHorarioDoMonitoramento() {
+
+    const agora = obterHorarioBrasil();
+
+    const minutosAtuais =
+        agora.hora * 60 +
+        agora.minuto;
+
+    const inicio =
+        HORA_INICIO * 60 +
+        MINUTO_INICIO;
+
+    const fim =
+        HORA_FIM * 60 +
+        MINUTO_FIM;
+
+    return (
+        minutosAtuais >= inicio &&
+        minutosAtuais < fim
+    );
+}
+
+// ==============================
+// IDENTIFICAR O DIA ATUAL
+// ==============================
+
+function obterDiaAtual() {
+
+    const agora = obterHorarioBrasil();
+
+    return `${agora.ano}-${agora.mes}-${agora.dia}`;
+}
+
+// ==============================
+// RESETAR PARA UM NOVO DIA
+// ==============================
+
+function verificarNovoDia() {
+
+    const diaAtual = obterDiaAtual();
+
+    if (ultimoDiaMonitorado !== diaAtual) {
+
+        ultimoDiaMonitorado = diaAtual;
+
+        monitoramentoAtivo = false;
+
+        liveEncontradaHoje = false;
+
+        console.log(
+            `📅 Novo dia detectado: ${diaAtual}`
+        );
+    }
+}
 
 // ==============================
 // BUSCAR LIVE AO VIVO
@@ -73,8 +182,49 @@ let liveAnunciadaAoVivo = false;
 
 async function verificarYouTube() {
 
+    verificarNovoDia();
+
+    // ==============================
+    // ANTES DAS 15:55
+    // ==============================
+
+    if (!estaNoHorarioDoMonitoramento()) {
+
+        return;
+    }
+
+    // ==============================
+    // SE JÁ ENCONTROU A LIVE
+    // ==============================
+
+    if (liveEncontradaHoje) {
+
+        return;
+    }
+
+    // ==============================
+    // ATIVAR MONITORAMENTO
+    // ==============================
+
+    if (!monitoramentoAtivo) {
+
+        monitoramentoAtivo = true;
+
+        console.log(
+            '📺 Monitoramento do YouTube ativado.'
+        );
+
+        console.log(
+            '🔎 Procurando live a cada 5 minutos.'
+        );
+    }
+
     if (!YOUTUBE_API) {
-        console.log('❌ YOUTUBE_API não configurada no Render.');
+
+        console.log(
+            '❌ YOUTUBE_API não configurada no Render.'
+        );
+
         return;
     }
 
@@ -93,8 +243,11 @@ async function verificarYouTube() {
             `&maxResults=1` +
             `&key=${YOUTUBE_API}`;
 
-        const liveResponse = await fetch(liveUrl);
-        const liveData = await liveResponse.json();
+        const liveResponse =
+            await fetch(liveUrl);
+
+        const liveData =
+            await liveResponse.json();
 
         // ==============================
         // ERRO DA API
@@ -106,12 +259,15 @@ async function verificarYouTube() {
                 '❌ Erro ao procurar live ativa:'
             );
 
-            console.error(liveData.error);
+            console.error(
+                liveData.error
+            );
 
             return;
         }
 
-        const liveVideos = liveData.items || [];
+        const liveVideos =
+            liveData.items || [];
 
         // ==============================
         // NENHUMA LIVE
@@ -123,10 +279,6 @@ async function verificarYouTube() {
                 '⚪ Nenhuma live ativa no momento.'
             );
 
-            // Permite detectar uma nova live futuramente
-            liveConhecida = null;
-            liveAnunciadaAoVivo = false;
-
             return;
         }
 
@@ -134,11 +286,14 @@ async function verificarYouTube() {
         // LIVE ENCONTRADA
         // ==============================
 
-        const video = liveVideos[0];
+        const video =
+            liveVideos[0];
 
-        const videoId = video.id.videoId;
+        const videoId =
+            video.id.videoId;
 
-        const titulo = video.snippet.title;
+        const titulo =
+            video.snippet.title;
 
         const thumbnail =
             video.snippet.thumbnails.maxres?.url ||
@@ -149,45 +304,55 @@ async function verificarYouTube() {
             `https://www.youtube.com/watch?v=${videoId}`;
 
         console.log(
-            `🔴 Live encontrada: ${titulo}`
+            `🔴 LIVE ENCONTRADA: ${titulo}`
+        );
+
+        console.log(
+            '📢 Enviando aviso para o Discord...'
         );
 
         // ==============================
-        // NOVA LIVE
+        // ENVIAR AVISO
         // ==============================
 
-        if (
-            liveConhecida !== videoId ||
-            !liveAnunciadaAoVivo
-        ) {
-
-            console.log(
-                '📢 Nova live detectada. Enviando aviso...'
-            );
-
-            const enviado = await enviarLiveAoVivo({
+        const enviado =
+            await enviarLiveAoVivo({
                 titulo,
                 thumbnail,
                 link
             });
 
-            // Só marca como anunciada
-            // se o Discord realmente recebeu a mensagem
-            if (enviado) {
+        // ==============================
+        // SE ENVIOU COM SUCESSO
+        // ==============================
 
-                liveConhecida = videoId;
-                liveAnunciadaAoVivo = true;
+        if (enviado) {
 
-                console.log(
-                    '✅ Live marcada como anunciada.'
-                );
+            liveEncontradaHoje = true;
 
-            } else {
+            monitoramentoAtivo = false;
 
-                console.log(
-                    '⚠️ Aviso não foi enviado. Tentará novamente.'
-                );
-            }
+            console.log(
+                '✅ Aviso enviado com sucesso.'
+            );
+
+            console.log(
+                '🛑 Monitoramento do YouTube encerrado por hoje.'
+            );
+
+            console.log(
+                '📅 Amanhã, às 15:55, o monitoramento será iniciado novamente.'
+            );
+
+        } else {
+
+            console.log(
+                '⚠️ Aviso não foi enviado.'
+            );
+
+            console.log(
+                '🔄 Tentará novamente na próxima verificação.'
+            );
         }
 
     } catch (error) {
@@ -212,9 +377,10 @@ async function enviarLiveAoVivo({
 
     try {
 
-        const canal = await client.channels.fetch(
-            CANAL_NOTIFICACAO_ID
-        );
+        const canal =
+            await client.channels.fetch(
+                CANAL_NOTIFICACAO_ID
+            );
 
         if (!canal) {
 
@@ -225,47 +391,63 @@ async function enviarLiveAoVivo({
             return false;
         }
 
-        const embed = new EmbedBuilder()
+        const embed =
+            new EmbedBuilder()
 
-            .setTitle('🔴 LIVE ON FAMÍLIA')
+                .setTitle(
+                    '🔴 LIVE ON FAMÍLIA'
+                )
 
-            .setDescription(
-                '**Italo Silva está ao vivo!** 🎥\n\n' +
-                'A transmissão começou. Acesse agora e acompanhe a live em tempo real.'
-            )
+                .setDescription(
+                    '**Italo Silva está ao vivo!** 🎥\n\n' +
+                    'A transmissão começou. Acesse agora e acompanhe a live em tempo real.'
+                )
 
-            .addFields({
-                name: '🎬 Transmissão',
-                value: titulo
-            })
+                .addFields({
+                    name: '🎬 Transmissão',
+                    value: titulo
+                })
 
-            .setImage(thumbnail)
+                .setImage(thumbnail)
 
-            .setColor(0xFF0000)
+                .setColor(0xFF0000)
 
-            .setFooter({
-                text: 'LIVE ON • Italo Silva'
-            })
+                .setFooter({
+                    text: 'LIVE ON • Italo Silva'
+                })
 
-            .setTimestamp();
+                .setTimestamp();
 
-        const botao = new ButtonBuilder()
+        const botao =
+            new ButtonBuilder()
 
-            .setLabel('ASSISTIR AGORA')
+                .setLabel(
+                    'ASSISTIR AGORA'
+                )
 
-            .setStyle(ButtonStyle.Link)
+                .setStyle(
+                    ButtonStyle.Link
+                )
 
-            .setURL(link)
+                .setURL(link)
 
-            .setEmoji('▶️');
+                .setEmoji('▶️');
 
-        const row = new ActionRowBuilder()
-            .addComponents(botao);
+        const row =
+            new ActionRowBuilder()
+                .addComponents(botao);
 
         await canal.send({
+
             content: '@everyone',
-            embeds: [embed],
-            components: [row]
+
+            embeds: [
+                embed
+            ],
+
+            components: [
+                row
+            ]
         });
 
         console.log(
@@ -290,110 +472,127 @@ async function enviarLiveAoVivo({
 // BOT ONLINE
 // ==============================
 
-client.once('clientReady', async () => {
+client.once(
+    'clientReady',
+    async () => {
 
-    console.log(
-        `🤖 Bot conectado como ${client.user.tag}`
-    );
+        console.log(
+            `🤖 Bot conectado como ${client.user.tag}`
+        );
 
-    // ==============================
-    // STATUS DO BOT
-    // ==============================
+        // ==============================
+        // STATUS DO BOT
+        // ==============================
 
-    client.user.setPresence({
+        client.user.setPresence({
 
-        activities: [{
-            name: '🔴 LIVE ON - ITALO SILVA',
-            type: 1,
-            url: YOUTUBE_URL
-        }],
+            activities: [{
+                name: '🔴 LIVE ON - ITALO SILVA',
+                type: 1,
+                url: YOUTUBE_URL
+            }],
 
-        status: 'online'
-    });
+            status: 'online'
+        });
 
-    console.log(
-        '📺 Status de transmissão ativado.'
-    );
+        console.log(
+            '📺 Status de transmissão ativado.'
+        );
 
-    // ==============================
-    // ENTRAR AUTOMATICAMENTE NA CALL
-    // ==============================
+        // ==============================
+        // ENTRAR AUTOMATICAMENTE NA CALL
+        // ==============================
 
-    try {
+        try {
 
-        const guild = await client.guilds.fetch(
-            SERVIDOR_ID
+            const guild =
+                await client.guilds.fetch(
+                    SERVIDOR_ID
+                );
+
+            console.log(
+                `Servidor encontrado: ${guild.name}`
+            );
+
+            const channel =
+                await guild.channels.fetch(
+                    CANAL_VOZ_ID
+                );
+
+            if (!channel) {
+
+                console.error(
+                    'Canal de voz não encontrado.'
+                );
+
+            } else if (
+                !channel.isVoiceBased()
+            ) {
+
+                console.error(
+                    'O ID informado não pertence a um canal de voz.'
+                );
+
+            } else {
+
+                console.log(
+                    `Canal encontrado: ${channel.name}`
+                );
+
+                joinVoiceChannel({
+
+                    channelId: channel.id,
+
+                    guildId: guild.id,
+
+                    adapterCreator:
+                        guild.voiceAdapterCreator,
+
+                    selfMute: false,
+
+                    selfDeaf: false
+                });
+
+                console.log(
+                    '🔊 Bot entrou na call.'
+                );
+            }
+
+        } catch (error) {
+
+            console.error(
+                '❌ ERRO AO ENTRAR NA CALL:'
+            );
+
+            console.error(error);
+        }
+
+        // ==============================
+        // INICIAR MONITORAMENTO
+        // ==============================
+
+        console.log(
+            '📺 Sistema de notificações do YouTube iniciado.'
         );
 
         console.log(
-            `Servidor encontrado: ${guild.name}`
+            '⏰ O monitoramento começará às 15:55.'
         );
 
-        const channel = await guild.channels.fetch(
-            CANAL_VOZ_ID
+        // Primeira verificação
+        // Não faz consulta antes do horário.
+        verificarYouTube();
+
+        // ==============================
+        // VERIFICA A CADA 5 MINUTOS
+        // ==============================
+
+        setInterval(
+            verificarYouTube,
+            5 * 60 * 1000
         );
-
-        if (!channel) {
-
-            console.error(
-                'Canal de voz não encontrado.'
-            );
-
-        } else if (!channel.isVoiceBased()) {
-
-            console.error(
-                'O ID informado não pertence a um canal de voz.'
-            );
-
-        } else {
-
-            console.log(
-                `Canal encontrado: ${channel.name}`
-            );
-
-            joinVoiceChannel({
-
-                channelId: channel.id,
-
-                guildId: guild.id,
-
-                adapterCreator: guild.voiceAdapterCreator,
-
-                selfMute: false,
-
-                selfDeaf: false
-            });
-
-            console.log(
-                '🔊 Bot entrou na call.'
-            );
-        }
-
-    } catch (error) {
-
-        console.error(
-            '❌ ERRO AO ENTRAR NA CALL:'
-        );
-
-        console.error(error);
     }
-
-    // ==============================
-    // INICIAR MONITORAMENTO DO YOUTUBE
-    // ==============================
-
-    console.log(
-        '📺 Sistema de notificações do YouTube iniciado.'
-    );
-
-    verificarYouTube();
-
-    // Verifica a cada 60 segundos
-    setInterval(
-        verificarYouTube,
-        60 * 1000
-    );
-});
+);
 
 // ==============================
 // LOGIN
