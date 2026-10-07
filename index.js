@@ -44,7 +44,7 @@ const TOKEN = process.env.DISCORD_TOKEN;
 const YOUTUBE_API = process.env.YOUTUBE_API;
 
 // ==============================
-// CAL
+// CALL
 // ==============================
 
 const CANAL_VOZ_ID = '1432433480004014150';
@@ -68,7 +68,7 @@ let liveConhecida = null;
 let liveAnunciadaAoVivo = false;
 
 // ==============================
-// BUSCAR TRANSMISSÃO
+// BUSCAR LIVE AO VIVO
 // ==============================
 
 async function verificarYouTube() {
@@ -81,71 +81,7 @@ async function verificarYouTube() {
     try {
 
         // ==============================
-        // PRIMEIRO: PROCURAR LIVE PROGRAMADA
-        // ==============================
-
-        const upcomingUrl =
-            `https://www.googleapis.com/youtube/v3/search` +
-            `?part=snippet` +
-            `&channelId=${YOUTUBE_CHANNEL_ID}` +
-            `&eventType=upcoming` +
-            `&type=video` +
-            `&maxResults=5` +
-            `&key=${YOUTUBE_API}`;
-
-        const upcomingResponse = await fetch(upcomingUrl);
-        const upcomingData = await upcomingResponse.json();
-
-        if (upcomingData.error) {
-            console.error('❌ Erro da YouTube API:');
-            console.error(upcomingData.error);
-            return;
-        }
-
-        const upcomingVideos = upcomingData.items || [];
-
-        if (upcomingVideos.length > 0) {
-
-            const video = upcomingVideos[0];
-
-            const videoId = video.id.videoId;
-
-            const titulo = video.snippet.title;
-
-            const thumbnail =
-                video.snippet.thumbnails.maxres?.url ||
-                video.snippet.thumbnails.high?.url ||
-                video.snippet.thumbnails.medium?.url;
-
-            const link =
-                `https://www.youtube.com/watch?v=${videoId}`;
-
-            // ==============================
-            // NOVA LIVE PROGRAMADA
-            // ==============================
-
-            if (liveConhecida !== videoId) {
-
-                liveConhecida = videoId;
-                liveAnunciadaAoVivo = false;
-
-                console.log(
-                    `📅 Nova live programada: ${titulo}`
-                );
-
-                await enviarLiveProgramada({
-                    titulo,
-                    thumbnail,
-                    link
-                });
-            }
-
-            // Verifica se já começou
-            await verificarStatusDaLive(videoId);
-        }
-
-        // ==============================
-        // PROCURAR LIVE QUE JÁ ESTÁ AO VIVO
+        // PROCURAR SOMENTE LIVE AO VIVO
         // ==============================
 
         const liveUrl =
@@ -160,62 +96,97 @@ async function verificarYouTube() {
         const liveResponse = await fetch(liveUrl);
         const liveData = await liveResponse.json();
 
+        // ==============================
+        // ERRO DA API
+        // ==============================
+
         if (liveData.error) {
-            console.error('❌ Erro ao procurar live ativa:');
+
+            console.error(
+                '❌ Erro ao procurar live ativa:'
+            );
+
             console.error(liveData.error);
+
             return;
         }
 
         const liveVideos = liveData.items || [];
 
-        if (liveVideos.length > 0) {
+        // ==============================
+        // NENHUMA LIVE
+        // ==============================
 
-            const video = liveVideos[0];
+        if (liveVideos.length === 0) {
 
-            const videoId = video.id.videoId;
+            console.log(
+                '⚪ Nenhuma live ativa no momento.'
+            );
 
-            const titulo = video.snippet.title;
+            // Permite detectar uma nova live futuramente
+            liveConhecida = null;
+            liveAnunciadaAoVivo = false;
 
-            const thumbnail =
-                video.snippet.thumbnails.maxres?.url ||
-                video.snippet.thumbnails.high?.url ||
-                video.snippet.thumbnails.medium?.url;
+            return;
+        }
 
-            const link =
-                `https://www.youtube.com/watch?v=${videoId}`;
+        // ==============================
+        // LIVE ENCONTRADA
+        // ==============================
 
-            // ==============================
-            // LIVE COMEÇOU
-            // ==============================
+        const video = liveVideos[0];
 
-            if (liveConhecida !== videoId) {
+        const videoId = video.id.videoId;
+
+        const titulo = video.snippet.title;
+
+        const thumbnail =
+            video.snippet.thumbnails.maxres?.url ||
+            video.snippet.thumbnails.high?.url ||
+            video.snippet.thumbnails.medium?.url;
+
+        const link =
+            `https://www.youtube.com/watch?v=${videoId}`;
+
+        console.log(
+            `🔴 Live encontrada: ${titulo}`
+        );
+
+        // ==============================
+        // NOVA LIVE
+        // ==============================
+
+        if (
+            liveConhecida !== videoId ||
+            !liveAnunciadaAoVivo
+        ) {
+
+            console.log(
+                '📢 Nova live detectada. Enviando aviso...'
+            );
+
+            const enviado = await enviarLiveAoVivo({
+                titulo,
+                thumbnail,
+                link
+            });
+
+            // Só marca como anunciada
+            // se o Discord realmente recebeu a mensagem
+            if (enviado) {
 
                 liveConhecida = videoId;
                 liveAnunciadaAoVivo = true;
 
                 console.log(
-                    `🔴 Live encontrada: ${titulo}`
+                    '✅ Live marcada como anunciada.'
                 );
 
-                await enviarLiveAoVivo({
-                    titulo,
-                    thumbnail,
-                    link
-                });
-
-            } else if (!liveAnunciadaAoVivo) {
-
-                liveAnunciadaAoVivo = true;
+            } else {
 
                 console.log(
-                    `🔴 Live começou: ${titulo}`
+                    '⚠️ Aviso não foi enviado. Tentará novamente.'
                 );
-
-                await enviarLiveAoVivo({
-                    titulo,
-                    thumbnail,
-                    link
-                });
             }
         }
 
@@ -223,168 +194,6 @@ async function verificarYouTube() {
 
         console.error(
             '❌ Erro ao consultar o YouTube:'
-        );
-
-        console.error(error);
-    }
-}
-
-// ==============================
-// VERIFICAR STATUS DA LIVE
-// ==============================
-
-async function verificarStatusDaLive(videoId) {
-
-    try {
-
-        const url =
-            `https://www.googleapis.com/youtube/v3/videos` +
-            `?part=snippet,liveStreamingDetails` +
-            `&id=${videoId}` +
-            `&key=${YOUTUBE_API}`;
-
-        const response = await fetch(url);
-        const data = await response.json();
-
-        if (data.error) {
-            console.error(
-                '❌ Erro ao verificar transmissão:'
-            );
-
-            console.error(data.error);
-
-            return;
-        }
-
-        if (!data.items || data.items.length === 0) {
-            return;
-        }
-
-        const video = data.items[0];
-
-        const detalhes = video.liveStreamingDetails;
-
-        if (!detalhes) {
-            return;
-        }
-
-        // ==============================
-        // LIVE COMEÇOU
-        // ==============================
-
-        if (
-            detalhes.actualStartTime &&
-            !liveAnunciadaAoVivo
-        ) {
-
-            liveAnunciadaAoVivo = true;
-
-            const titulo = video.snippet.title;
-
-            const thumbnail =
-                video.snippet.thumbnails.maxres?.url ||
-                video.snippet.thumbnails.high?.url ||
-                video.snippet.thumbnails.medium?.url;
-
-            const link =
-                `https://www.youtube.com/watch?v=${videoId}`;
-
-            console.log(
-                `🔴 LIVE COMEÇOU: ${titulo}`
-            );
-
-            await enviarLiveAoVivo({
-                titulo,
-                thumbnail,
-                link
-            });
-        }
-
-    } catch (error) {
-
-        console.error(
-            '❌ Erro ao verificar status da live:'
-        );
-
-        console.error(error);
-    }
-}
-
-// ==============================
-// AVISO DE LIVE PROGRAMADA
-// ==============================
-
-async function enviarLiveProgramada({
-    titulo,
-    thumbnail,
-    link
-}) {
-
-    try {
-
-        const canal = await client.channels.fetch(
-            CANAL_NOTIFICACAO_ID
-        );
-
-        if (!canal) {
-            console.log(
-                '❌ Canal de notificação não encontrado.'
-            );
-
-            return;
-        }
-
-        const embed = new EmbedBuilder()
-
-            .setTitle('📅 PRÓXIMA TRANSMISSÃO')
-
-            .setDescription(
-                '**Italo Silva programou uma nova transmissão.**\n\n' +
-                'Confira os detalhes e programe-se para acompanhar o início.'
-            )
-
-            .addFields({
-                name: '🎬 Transmissão',
-                value: titulo
-            })
-
-            .setImage(thumbnail)
-
-            .setColor(0x5865F2)
-
-            .setFooter({
-                text: 'LIVE ON • Italo Silva'
-            })
-
-            .setTimestamp();
-
-        const botao = new ButtonBuilder()
-
-            .setLabel('VER PROGRAMAÇÃO')
-
-            .setStyle(ButtonStyle.Link)
-
-            .setURL(link)
-
-            .setEmoji('▶️');
-
-        const row = new ActionRowBuilder()
-            .addComponents(botao);
-
-        await canal.send({
-            content: '@everyone',
-            embeds: [embed],
-            components: [row]
-        });
-
-        console.log(
-            '📢 Aviso de live programada enviado.'
-        );
-
-    } catch (error) {
-
-        console.error(
-            '❌ Erro ao enviar aviso de programação:'
         );
 
         console.error(error);
@@ -408,11 +217,12 @@ async function enviarLiveAoVivo({
         );
 
         if (!canal) {
+
             console.log(
                 '❌ Canal de notificação não encontrado.'
             );
 
-            return;
+            return false;
         }
 
         const embed = new EmbedBuilder()
@@ -462,6 +272,8 @@ async function enviarLiveAoVivo({
             '🔴 Aviso de LIVE ON enviado.'
         );
 
+        return true;
+
     } catch (error) {
 
         console.error(
@@ -469,6 +281,8 @@ async function enviarLiveAoVivo({
         );
 
         console.error(error);
+
+        return false;
     }
 }
 
